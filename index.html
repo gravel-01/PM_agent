@@ -1,0 +1,955 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  ShieldAlert, BrainCircuit, Target, Globe, ShieldCheck, 
+  History, LayoutDashboard, Component, GitCompare, FileText, 
+  Play, Bot, User, Send, Network, FileJson, TestTube, AlertTriangle, 
+  CheckCircle, Hammer, FileCode2, X, TerminalSquare, Users, 
+  ChevronDown, Check, Loader2, PlayCircle, Code, Zap, RotateCcw, 
+  Files, Search, GitMerge, XOctagon, Shield
+} from 'lucide-react';
+
+// ==========================================
+// 辅助工具与通用组件
+// ==========================================
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const Mermaid = ({ chart }) => {
+  const containerRef = useRef(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    const scriptId = 'mermaid-script';
+    let script = document.getElementById(scriptId);
+
+    const renderChart = () => {
+      if (window.mermaid && containerRef.current) {
+        try {
+          window.mermaid.initialize({
+            startOnLoad: false,
+            theme: 'dark',
+            securityLevel: 'loose',
+            themeVariables: { fontFamily: 'Inter, sans-serif' }
+          });
+          containerRef.current.innerHTML = `<div class="mermaid">${chart}</div>`;
+          window.mermaid.init(undefined, containerRef.current.querySelectorAll('.mermaid'));
+          setError(false);
+        } catch (err) {
+          console.error("Mermaid rendering failed", err);
+          setError(true);
+        }
+      }
+    };
+
+    if (!script) {
+      script = document.createElement('script');
+      script.id = scriptId;
+      script.src = 'https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js';
+      script.async = true;
+      script.onload = renderChart;
+      document.body.appendChild(script);
+    } else {
+      if (window.mermaid) renderChart();
+      else script.addEventListener('load', renderChart);
+    }
+    return () => { if (script) script.removeEventListener('load', renderChart); };
+  }, [chart]);
+
+  if (error) return <div className="text-red-500 text-sm">图表渲染失败</div>;
+  return <div ref={containerRef} className="w-full flex justify-center" />;
+};
+
+// ==========================================
+// 架构状态追踪器 (展示 5 大 Zone 核心链路)
+// ==========================================
+const WorkflowTracker = ({ currentZone, status = 'normal' }) => {
+  const steps = [
+    { id: 1, name: '1. 边界澄清' },
+    { id: 2, name: '2. 全局编排' },
+    { id: 3, name: '3. 契约生成' },
+    { id: 4, name: '4. 沙箱执行' },
+    { id: 5, name: '5. 熔断/合并' }
+  ];
+
+  return (
+    <div className="flex items-center justify-between w-full px-4 py-3 bg-slate-950 border-b border-slate-800 shrink-0">
+      {steps.map((step, idx) => {
+        const isActive = step.id === currentZone;
+        const isPassed = step.id < currentZone || (step.id === 5 && status === 'success');
+        let bgColor = 'bg-slate-800';
+        let textColor = 'text-slate-500';
+        let borderColor = 'border-slate-700';
+
+        if (isActive) {
+          if (status === 'error') { bgColor = 'bg-rose-500/20'; textColor = 'text-rose-400'; borderColor = 'border-rose-500'; }
+          else if (status === 'warning') { bgColor = 'bg-amber-500/20'; textColor = 'text-amber-400'; borderColor = 'border-amber-500'; }
+          else { bgColor = 'bg-indigo-600/20'; textColor = 'text-indigo-400'; borderColor = 'border-indigo-500'; }
+        } else if (isPassed) {
+          bgColor = 'bg-emerald-500/10'; textColor = 'text-emerald-500'; borderColor = 'border-emerald-500/50';
+        }
+
+        return (
+          <React.Fragment key={step.id}>
+            <div className={`flex items-center px-3 py-1.5 rounded-full border ${bgColor} ${textColor} ${borderColor} text-xs font-bold transition-all duration-300`}>
+              {isPassed && !isActive ? <CheckCircle className="w-3 h-3 mr-1" /> : null}
+              {isActive && status === 'error' ? <XOctagon className="w-3 h-3 mr-1" /> : null}
+              {isActive && status === 'warning' ? <AlertTriangle className="w-3 h-3 mr-1" /> : null}
+              {step.name}
+            </div>
+            {idx < steps.length - 1 && (
+              <div className={`flex-1 h-px mx-2 ${step.id < currentZone ? 'bg-emerald-500/50' : 'bg-slate-800'}`} />
+            )}
+          </React.Fragment>
+        )
+      })}
+    </div>
+  );
+};
+
+// ==========================================
+// 核心数据模型 (看板用)
+// ==========================================
+const painPoints = [
+  { icon: <BrainCircuit className="w-6 h-6 text-indigo-500" />, title: "模型幻觉", issue: "闭着眼瞎编API，报错了还不认错，陷入死循环。", solution: "业务级 BDD 断言与第三方仲裁", desc: "不看语法只看结果，强制通过业务行为测试，连续失败直接熔断告警。" },
+  { icon: <History className="w-6 h-6 text-blue-500" />, title: "上下文遗忘", issue: "不到十轮对话就忘了规矩，偷偷用默认实现乱写。", solution: "分层记忆与不可变全局规则", desc: "维护绝对不被压缩的“规则白名单”，每次派发任务强制最高优先级注入祖宗之法。" },
+  { icon: <Target className="w-6 h-6 text-rose-500" />, title: "目标漂移", issue: "为了修一个小报错，擅自升级框架导致雪崩。", solution: "意图锚定与边界熔断", desc: "划定最大改动范围。一旦触碰无关核心文件，立即向人类提出降级协商。" },
+  { icon: <Globe className="w-6 h-6 text-teal-500" />, title: "全局视野缺失", issue: "改个前端字段，后端和数据库全崩了，满屏红。", solution: "系统级变更影响面分析", desc: "执行Agent只有建议权。落盘前PM Agent校验全局契约蓝图，确认无副作用才放行。" },
+  { icon: <ShieldAlert className="w-6 h-6 text-amber-500" />, title: "极其盲目乐观", issue: "只写 Happy Path，一上生产遇到脏数据立刻白屏。", solution: "强制对抗性验收 (Adversarial QA)", desc: "强行塞入异常场景（如断网、并发、脏数据注入），无防错逻辑的代码直接打回。" },
+  { icon: <ShieldCheck className="w-6 h-6 text-emerald-500" />, title: "状态失控与不可逆", issue: "忘打 commit 导致一晚上的心血被垃圾代码覆盖。", solution: "静默事件溯源与原子化回滚", desc: "每次执行前静默打 Checkpoint。一旦测试失败自动回滚，永远保持可运行基线。" }
+];
+
+const mermaidDAG = `
+graph TD
+    classDef frontend fill:#1e293b,stroke:#475569,stroke-width:1px,color:#e2e8f0;
+    classDef backend fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#93c5fd;
+    classDef db fill:#020617,stroke:#10b981,stroke-width:2px,color:#a7f3d0;
+
+    Client[前端: H5 商城界面]:::frontend
+    Gateway[API Gateway]:::backend
+    PointsSvc[后端: 积分服务 PointService]:::backend
+    OrderSvc[后端: 订单服务 OrderService]:::backend
+    Redis[(Redis 缓存: 防超卖)]:::db
+    MySQL[(MySQL: 积分表)]:::db
+
+    Client -->|兑换请求| Gateway
+    Gateway --> PointsSvc
+    Gateway --> OrderSvc
+    PointsSvc -->|1. 扣减| Redis
+    OrderSvc -->|2. 创单| MySQL
+    PointsSvc -->|3. 异步落库| MySQL
+`;
+
+const fullArchitectureDiagram = `%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e3f2fd', 'edgeLabelBackground':'#ffffff', 'tertiaryColor': '#fff'}}}%%
+flowchart TD
+    %% Define Node Styles
+    classDef human fill:#fff9c4,stroke:#fbc02d,stroke-width:2px,color:#000;
+    classDef pm_core fill:#e1f5fe,stroke:#0277bd,stroke-width:2px,color:#000;
+    classDef dev fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#000;
+    classDef data fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#000,stroke-dasharray: 5 5;
+    classDef tools fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#000;
+    classDef decision fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,color:#000;
+    classDef gate fill:#eeeeee,stroke:#616161,stroke-width:2px,color:#000,stroke-dasharray: 3 3;
+
+    %% ZONE 1: INPUT & CLARIFICATION
+    subgraph ZONE_INPUT [1. 需求输入与边界澄清]
+        direction TB
+        Input["人类用户原始模糊需求"]:::human
+        Node_Clarify["PM Agent: 需求澄清<br/>'主动追问边界与细节'"]:::pm_core
+        Gate_1{"人机审核点 1:<br/>确认业务边界?"}:::gate
+    end
+
+    Input --> Node_Clarify
+    Node_Clarify --> Gate_1
+    Gate_1 --"否: 需补充信息"--> Node_Clarify
+    Gate_1 --"是: 边界锁定"--> ZONE_PLANNING
+
+    %% ZONE 2: PLANNING & ORCHESTRATION
+    subgraph ZONE_PLANNING [2. 需求拆解与全局编排]
+        direction TB
+        Data_Context("项目全局上下文:<br/>代码AST, 现有Schema, 非功能需求NFR"):::data
+        Tool_Search("外部工具:<br/>开源高质量架构检索"):::tools
+        Node_Arch["PM Agent: 架构探索与设计<br/>'提取可复用开源模式'"]:::pm_core
+        Node_DAG["PM Agent: DAG与任务规划<br/>'原子化拆解与依赖拓扑'"]:::pm_core
+    end
+
+    Gate_1 --进入设计阶段--> Node_Arch
+    Data_Context -.-> Node_Arch
+    Tool_Search <--> Node_Arch
+    Node_Arch --> Node_DAG
+
+    %% ZONE 3: CONTRACT & TEST GENERATION
+    subgraph ZONE_CONTRACT [3. 机器契约与测试生成]
+        direction TB
+        Node_Contract["PM Agent: 契约定义<br/>'生成 API / 数据库 Schema 契约'"]:::pm_core
+        Node_BDD["PM Agent: QA与BDD用例生成<br/>'业务行为断言与故障模式注入'"]:::pm_core
+        Node_Prompt["PM Agent: Skill 动态变形<br/>'降维生成开发 Agent 专属提示词'"]:::pm_core
+    end
+
+    Node_DAG --> Node_Contract
+    Node_Contract --> Node_BDD
+    Node_BDD --> Node_Prompt
+
+    %% Human Review Gate
+    Gate_2{"人机审核点 2:<br/>审批执行图纸与契约?"}:::gate
+    Node_Prompt --> Gate_2
+    Gate_2 --"否: 驳回或修改"--> Node_DAG
+
+    %% ZONE 4: EXECUTION & REFLECTION
+    subgraph ZONE_EXECUTION [4. 执行与自省闭环]
+        direction TB
+        Checkpoint_0["状态检查点 0<br/>执行前自动 Git Commit"]:::data
+        Queue("开发任务负载 Payload<br/>DAG + 契约 + BDD断言 + 提示词"):::pm_core
+        Node_Dev["开发 Agent: 编码与单元测试<br/>'受限沙箱执行'"]:::dev
+        Node_Reflect["PM Agent: 验收与自省<br/>'契约与 BDD 业务逻辑校验'"]:::pm_core
+        Check_Pass{"自动判定:<br/>测试是否全部通过?"}:::decision
+    end
+
+    Gate_2 --"是: 允许施工"--> Checkpoint_0
+    Checkpoint_0 --> Queue
+    Queue --> Node_Dev
+    Node_Dev --> Node_Reflect
+    Node_Reflect --> Check_Pass
+
+    %% ZONE 5: MERGE OR INTERVENTION
+    subgraph ZONE_INTERVENTION [5. 代码合并或熔断干预]
+        direction TB
+        Check_Fail_Type{"自动判定:<br/>失败归因分析"}:::decision
+        Node_Hint["PM Agent: 错误仲裁<br/>'生成错误修复提示词打回'"]:::pm_core
+        Node_Circuit["PM Agent: 全局熔断与状态回滚<br/>'遭遇技术死锁/契约冲突'"]:::pm_core
+        Node_ROI["PM Agent: ROI 评估<br/>'准备降级与妥协提案'"]:::pm_core
+        Gate_3{"人机审核点 3:<br/>需求降级与动态协商?"}:::gate
+        Node_Merge["PM Agent: 代码合并与确权"]:::pm_core
+        Checkpoint_N["状态检查点 N<br/>交付新基线代码"]:::data
+    end
+
+    %% Flow through decisions
+    Check_Pass --"是: 验收通过"--> Node_Merge
+    Node_Merge --> Checkpoint_N
+    Checkpoint_N --> Final["交付人类最终验收"]:::human
+
+    Check_Pass --"否: 存在异常"--> Check_Fail_Type
+    Check_Fail_Type --"可修复异常<br/>(语法错误/局部逻辑)"--> Node_Hint
+    Node_Hint --> Node_Dev
+
+    Check_Fail_Type --"致命死锁<br/>(包冲突/架构破坏)"--> Node_Circuit
+    Data_Context -.-> Node_Circuit
+    Node_Circuit --一键无损撤销--> Checkpoint_0
+    Node_Circuit --> Node_ROI
+    Node_ROI --> Gate_3
+
+    Gate_3 --"同意妥协: 采纳降级方案"--> Node_Clarify
+    Gate_3 --"放弃任务: 及时止损"--> Final_Fail["清退/终止本次任务"]:::pm_core
+
+    %% Skill context input
+    Skills("Agent 技能库:<br/>Coder, DBA, API 设计等"):::data
+    Skills -.-> Node_Prompt
+`;
+
+// ==========================================
+// 子组件：需求规划与审批原型 (PM-Agent Prototype)
+// ==========================================
+const PlanningPrototype = () => {
+  const [chat, setChat] = useState([
+    { role: 'agent', content: '你好！我是你的研发架构总管 PM-Agent。有什么新的需求想法？请随意描述，我会帮你进行边界澄清并生成架构级契约。', isHtml: false }
+  ]);
+  const [input, setInput] = useState('');
+  const [step, setStep] = useState(0); // 0: initial, 1: clarified, 2: approved
+  const [isTyping, setIsTyping] = useState(false);
+  const [showArtifacts, setShowArtifacts] = useState(false);
+  const [isExecuting, setIsExecuting] = useState(false);
+  const chatEndRef = useRef(null);
+
+  // 计算当前的架构 Zone
+  let activeZone = 1;
+  if (step === 1 && isTyping) activeZone = 2; // 生成图纸中 (ZONE 2)
+  if (step === 2) activeZone = 3; // 图纸已生成 (ZONE 3)
+  if (isExecuting) activeZone = 4; // 开始沙箱执行 (ZONE 4)
+
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chat, isTyping]);
+
+  const handleSend = async () => {
+    if (!input.trim() || isTyping) return;
+    const userText = input.trim();
+    setInput('');
+    setChat(prev => [...prev, { role: 'user', content: userText }]);
+    setIsTyping(true);
+
+    if (step === 0) {
+      await sleep(1200);
+      setIsTyping(false);
+      setChat(prev => [...prev, { 
+        role: 'agent', 
+        isHtml: true,
+        content: `收到需求。在开始架构规划前，作为 <strong>PM-Agent</strong>，我发现需求边界存在模糊，为了防止后续 Dev Agent 盲目乐观导致生产雪崩，请补充确认以下边界条件：<br/>
+                  <ul class="list-decimal pl-5 mt-2 space-y-1 text-amber-200/80">
+                      <li><strong>业务边界：</strong>积分是否会过期？退货时积分如何处理？</li>
+                      <li><strong>风控边界：</strong>该商城是否会参与秒杀等高并发场景？防超卖的严格程度要求？</li>
+                  </ul>`
+      }]);
+      setStep(1);
+    } else if (step === 1) {
+      await sleep(1000);
+      setIsTyping(false);
+      setChat(prev => [...prev, {
+        role: 'agent',
+        isHtml: true,
+        content: `<p class="text-emerald-400 font-bold mb-1"><CheckCircle class="w-4 h-4 inline mr-1" /> 人机审核点 1：边界已锁定</p>
+                  <p>正在根据“高并发防超卖”约束，为您提取开源架构最佳实践，并生成强类型的系统拓扑图 (DAG) 与接口契约...</p>`
+      }]);
+      
+      await sleep(1500);
+      setShowArtifacts(true);
+      setChat(prev => [...prev, {
+        role: 'agent',
+        isHtml: true,
+        content: `<p class="font-bold text-white">架构蓝图已生成！</p>
+                  <p class="mt-1">请在右侧查阅微服务拓扑图与验收断言。<br>确认无误后，请点击右下角的 <strong>“通过并执行”</strong> 进入下一阶段。</p>`
+      }]);
+      setStep(2);
+    }
+  };
+
+  const handleApprove = async () => {
+    setIsExecuting(true);
+    setChat(prev => [...prev, {
+      role: 'agent',
+      isHtml: true,
+      content: `<p class="text-indigo-400 font-bold mb-1">人机审核点 2：已通过</p>
+                <p>施工图纸已下发。系统正式进入 <strong>ZONE 4: 沙箱执行</strong> 阶段。我将作为“魔鬼QA”在代码落盘前进行强制拦截和 BDD 断言。您可以稍作休息。</p>`
+    }]);
+  };
+
+  return (
+    <div className="h-[700px] flex flex-col border border-slate-700 rounded-xl overflow-hidden bg-slate-900 font-sans text-slate-300 shadow-2xl">
+      <WorkflowTracker currentZone={activeZone} />
+      <div className="flex-1 flex overflow-hidden">
+        {/* 左侧：对话规划区 */}
+        <div className="w-1/2 flex flex-col border-r border-slate-800 relative bg-slate-900">
+          <div className="h-12 bg-slate-950 border-b border-slate-800 flex items-center px-4 shrink-0">
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-5 space-y-6 pb-20">
+          {chat.map((msg, idx) => (
+            <div key={idx} className={`flex items-start ${msg.role === 'user' ? 'justify-end' : ''} animate-in fade-in slide-in-from-bottom-2`}>
+              {msg.role === 'agent' && (
+                <div className="w-8 h-8 rounded bg-indigo-600 flex items-center justify-center shrink-0 mr-3 shadow-lg"><Bot className="w-5 h-5 text-white" /></div>
+              )}
+              <div className={`px-4 py-3 rounded-2xl max-w-[85%] text-sm border ${
+                msg.role === 'user' ? 'bg-indigo-600/20 text-indigo-100 rounded-tr-none border-indigo-500/30' : 'bg-slate-800 text-slate-200 rounded-tl-none border-slate-700'
+              }`}>
+                {msg.isHtml ? <div dangerouslySetInnerHTML={{ __html: msg.content }} /> : <p>{msg.content}</p>}
+                
+                {idx === 0 && step === 0 && (
+                  <button onClick={() => setInput('帮我加一个用户积分商城功能，用户可以用积分兑换商品。')} className="mt-3 text-xs bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-full text-indigo-300 transition-colors border border-slate-600">
+                    💡 示例：新增积分商城模块
+                  </button>
+                )}
+                {idx === 2 && step === 1 && (
+                  <button onClick={() => setInput('积分永不过期。会有秒杀活动，并发预估 10k QPS，必须严格防超卖。')} className="mt-3 text-xs bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-full text-indigo-300 transition-colors border border-slate-600">
+                    💡 示例：明确并发与业务边界
+                  </button>
+                )}
+              </div>
+              {msg.role === 'user' && (
+                <div className="w-8 h-8 rounded bg-slate-700 flex items-center justify-center shrink-0 ml-3"><User className="w-4 h-4 text-slate-300" /></div>
+              )}
+            </div>
+          ))}
+          {isTyping && (
+            <div className="flex items-start animate-in fade-in">
+              <div className="w-8 h-8 rounded bg-indigo-600 flex items-center justify-center shrink-0 mr-3"><Bot className="w-5 h-5 text-white" /></div>
+              <div className="bg-slate-800 rounded-2xl rounded-tl-none px-4 py-3 flex items-center border border-slate-700 h-10">
+                <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+              </div>
+            </div>
+          )}
+          <div ref={chatEndRef} />
+        </div>
+
+        <div className="absolute bottom-0 left-0 w-full p-4 bg-slate-900 border-t border-slate-800">
+          <div className="flex items-center bg-slate-800 rounded-xl border border-slate-700 focus-within:border-indigo-500 transition-all">
+            <input type="text" value={input} onChange={e => setInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleSend()} className="w-full bg-transparent text-slate-200 text-sm px-4 py-3 outline-none" placeholder="描述需求..." disabled={isTyping} />
+            <button onClick={handleSend} className="p-2 mr-2 text-indigo-400 hover:text-indigo-300 bg-indigo-500/10 rounded-lg"><Send className="w-4 h-4" /></button>
+          </div>
+        </div>
+      </div>
+
+      {/* 右侧：契约与沙箱区 */}
+      <div className="w-1/2 flex flex-col bg-[#0f172a] relative">
+        {!showArtifacts ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-600 z-10">
+            <Component className="w-16 h-16 mb-4 opacity-50" />
+            <p className="text-sm font-medium">需求澄清后，此处生成架构拓扑与契约</p>
+          </div>
+        ) : isExecuting ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-8 animate-in zoom-in-95 duration-500">
+            <div className="relative w-24 h-24 mb-6">
+              <div className="absolute inset-0 border-4 border-indigo-500/30 rounded-full animate-ping"></div>
+              <div className="absolute inset-2 bg-indigo-600 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(79,70,229,0.5)]"><Hammer className="w-10 h-10 text-white animate-bounce" /></div>
+            </div>
+            <h2 className="text-xl font-bold text-white mb-2">已打底 Git Checkpoint，沙箱执行中...</h2>
+            <p className="text-slate-400 text-sm max-w-md mx-auto mb-8">PM Agent 已将图纸下发给 Dev Agent。执行过程中若发现不可逆破坏，将立即触发熔断并静默回滚。</p>
+            <div className="w-full max-w-sm bg-slate-900 rounded-lg p-4 border border-slate-700 text-left font-mono text-sm space-y-2">
+              <div className="text-emerald-400">✓ [PM] Checkpoint created: e4f9a1b</div>
+              <div className="text-emerald-400">✓ [Dev] Implement Redis Lua script</div>
+              <div className="text-slate-300 flex items-center"><Loader2 className="w-3 h-3 mr-2 animate-spin" /> [Dev] Building MySQL migrations...</div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col animate-in fade-in slide-in-from-right-4 duration-500">
+            <div className="flex border-b border-slate-800 bg-slate-950 px-2 shrink-0">
+              <button className="px-4 py-3 text-sm font-medium text-indigo-400 border-b-2 border-indigo-500 flex items-center"><Network className="w-4 h-4 mr-2" /> 架构拓扑 (DAG)</button>
+              <button className="px-4 py-3 text-sm font-medium text-slate-400 flex items-center"><FileJson className="w-4 h-4 mr-2" /> API 契约</button>
+              <button className="px-4 py-3 text-sm font-medium text-slate-400 flex items-center"><TestTube className="w-4 h-4 mr-2" /> BDD 断言</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 bg-slate-900/50">
+              <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-4 shadow-inner">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex justify-between">
+                  <span>微服务级依赖图</span><span className="text-emerald-400 flex items-center"><ShieldCheck className="w-3 h-3 mr-1" /> 无架构冲突</span>
+                </h3>
+                <Mermaid chart={mermaidDAG} />
+              </div>
+              <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">强制风控节点 (Risk Control)</h3>
+                <ul className="text-sm space-y-2 text-slate-300">
+                  <li className="flex items-start"><AlertTriangle className="w-4 h-4 text-amber-500 mr-2 mt-0.5 shrink-0" /> 监测到高并发需求，已强制引入 Redis Lua 脚本。</li>
+                  <li className="flex items-start"><AlertTriangle className="w-4 h-4 text-amber-500 mr-2 mt-0.5 shrink-0" /> 已自动挂载 BDD 测试：模拟 10k 并发压测防超卖。</li>
+                </ul>
+              </div>
+            </div>
+            <div className="shrink-0 p-4 border-t border-slate-800 bg-slate-950 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-bold text-white">审核点 2：架构契约审批</p>
+            <p className="text-xs text-slate-400 mt-1">确认无误后，交由 Dev Agent 施工。</p>
+          </div>
+          <button onClick={handleApprove} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-lg flex items-center transition-all">
+            <CheckCircle className="w-4 h-4 mr-2" /> 通过并执行
+          </button>
+        </div>
+      </div>
+    )}
+  </div>
+  </div>
+</div>
+);
+};
+
+// ==========================================
+// 子组件：VSCode IDE 场景演示 (IDE Demo)
+// ==========================================
+const IDEDemo = () => {
+  const [activeView, setActiveView] = useState('code'); // 'code' | 'meeting'
+  const [audience, setAudience] = useState('expert'); // 'beginner' | 'expert'
+  
+  // Architecture Tracker States
+  const [ideZone, setIdeZone] = useState(3);
+  const [ideStatus, setIdeStatus] = useState('normal');
+
+  // States for Code Demo
+  const [pmChat, setPmChat] = useState([
+    { type: 'html', content: `<p class="font-bold text-blue-400 mb-1">系统已就绪</p><p>检测到本地工程 <code>e-commerce-backend</code>。我是研发大总管，请输入需求。</p>` }
+  ]);
+  const [terminal, setTerminal] = useState([
+    { type: 'info', text: '➜ workspace $ PM-Agent Orchestrator initialized. Active Worker: Claude Code.' }
+  ]);
+  const [codeLines, setCodeLines] = useState([
+    '<span class="cm">// PointService.js</span>',
+    '<span class="cm">// 等待 Agent 生成代码...</span>'
+  ]);
+  const [demoState, setDemoState] = useState('idle'); // idle -> running -> done
+  const pmChatRef = useRef(null);
+  const termRef = useRef(null);
+  const codeRef = useRef(null);
+
+  // States for Meeting Room
+  const [meetingState, setMeetingState] = useState('idle'); // idle -> running
+  const [meetingChat, setMeetingChat] = useState([]);
+  const meetingEndRef = useRef(null);
+
+  useEffect(() => { pmChatRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [pmChat]);
+  useEffect(() => { termRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [terminal]);
+  useEffect(() => { codeRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [codeLines]);
+  useEffect(() => { meetingEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [meetingChat]);
+
+  // Highlight helper for code
+  const formatCodeLine = (line) => {
+    let html = line.replace(/const|let|async|await|class|if|throw|new|return/g, '<span class="text-[#569cd6]">$&</span>');
+    html = html.replace(/function|PointService|Error|Redis/g, '<span class="text-[#4ec9b0]">$&</span>');
+    html = html.replace(/redeemPoints|deduct|query/g, '<span class="text-[#dcdcaa]">$&</span>');
+    html = html.replace(/'.*?'|".*?"/g, '<span class="text-[#ce9178]">$&</span>');
+    html = html.replace(/\/\/.*$/g, '<span class="text-[#6a9955]">$&</span>');
+    return html;
+  };
+
+  const typeCode = async (codeStr, replace = false) => {
+    if (replace) setCodeLines([]);
+    const lines = codeStr.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const formatted = formatCodeLine(lines[i]);
+      setCodeLines(prev => replace && i === 0 ? [formatted] : [...prev, formatted]);
+      await sleep(150);
+    }
+  };
+
+  const startIDEDemo = async () => {
+    if (demoState !== 'idle') return;
+    setDemoState('running');
+    setActiveView('code');
+    setIdeZone(2);
+    setPmChat(prev => [...prev, { type: 'user', content: '帮我开发一个积分兑换商品的接口逻辑。' }]);
+    
+    await sleep(1000);
+    setTerminal(prev => [...prev, { type: 'pm', text: '[PM-Agent] [ZONE 2] Analyzing requirement and dependencies...' }]);
+    await sleep(800);
+    
+    setIdeZone(3);
+    setPmChat(prev => [...prev, {
+      type: 'html',
+      content: `<p class="font-bold text-blue-400 mb-2">已生成架构蓝图 (Approval Gate)</p>
+                <div class="bg-[#1e1e1e] border border-[#4a4a4a] p-2 rounded mb-2 text-[10px] text-gray-400 font-mono">
+                    <span class="text-blue-300">DAG:</span> [Client] -> [Gateway] -> [PointService]<br>
+                    <span class="text-green-300">Contract:</span> redeemPoints(userId, cost)<br>
+                    <span class="text-yellow-300">BDD Test:</span> Concurrent redemption (100 threads)
+                </div>
+                <p class="text-gray-400 mb-3">为防止代码覆盖，请确认授权我编排 <strong>Claude Code</strong> 进行沙箱施工。</p>`
+    }]);
+  };
+
+  const approveExecution = async () => {
+    setDemoState('executing');
+    setIdeZone(4);
+    setTerminal(prev => [...prev, { type: 'success', text: "➜ workspace $ git commit -m 'PM-Agent: Checkpoint before PointService creation'" }]);
+    await sleep(800);
+    setTerminal(prev => [...prev, 
+      { type: 'pm', text: '[PM-Agent] [ZONE 4] Dispatching task to Worker [Claude Code]...' },
+      { type: 'claude', text: '[Claude Code] Understood. Generating PointService.js (Happy Path)...' }
+    ]);
+    
+    await sleep(1000);
+    const badCode = `// Generated by Claude Code
+class PointService {
+    async redeemPoints(userId, cost) {
+        // 1. 查询积分
+        const points = await db.query('SELECT points FROM users WHERE id = ?', userId);
+        
+        if (points < cost) throw new Error('积分不足');
+        
+        // 2. 扣减积分 (存在并发漏洞!)
+        await db.query('UPDATE users SET points = points - ? WHERE id = ?', cost, userId);
+        return true;
+    }
+}`;
+    await typeCode(badCode, true);
+    
+    await sleep(800);
+    setTerminal(prev => [...prev, 
+      { type: 'claude', text: '[Claude Code] File PointService.js updated.' },
+      { type: 'pm', text: '[PM-Agent] [ZONE 4] Executing Contract & BDD Tests in Sandbox...' }
+    ]);
+    
+    await sleep(1500);
+    setIdeZone(5);
+    setIdeStatus('error');
+    setTerminal(prev => [...prev, 
+      { type: 'error', text: '<br>[ERROR] BDD Test Failed: Concurrent Redemption (100 reqs/sec).' },
+      { type: 'error', text: '      Expected balance: 0, Actual balance: -90. Race condition detected.' }
+    ]);
+
+    setPmChat(prev => [...prev, {
+      type: 'html',
+      content: `<p class="font-bold text-red-400 mb-1"><XOctagon class="w-3 h-3 inline" /> BDD 断言失败 (并发漏洞)</p>
+                <p class="text-gray-300 text-xs mt-1">Claude Code 写的代码只考虑了理想情况（盲目乐观）。在压测中出现超卖（余额变负）。<br>
+                <span class="text-blue-300">我已触发熔断，进入 <strong>ZONE 5: 异常干预</strong>，并强制携带【Redis 分布式锁】约束打回重写。</span></p>`
+    }]);
+
+    await sleep(2000);
+    setIdeZone(4);
+    setIdeStatus('warning');
+    setTerminal(prev => [...prev, 
+      { type: 'pm', text: '[PM-Agent] [ZONE 4] Triggering self-reflection loop. Injecting constraints...' },
+      { type: 'claude', text: '[Claude Code] Acknowledged. Rewriting with Redis Lua Script to ensure atomicity.' }
+    ]);
+
+    const goodCode = `// Rewritten by Claude Code (Enforced by PM-Agent)
+class PointService {
+    constructor(redisClient) { this.redis = redisClient; }
+
+    async redeemPoints(userId, cost) {
+        // 使用 Lua 脚本保证原子扣减，防超卖
+        const luaScript = \`
+            local current = tonumber(redis.call('get', KEYS[1]) or '0')
+            if current >= tonumber(ARGV[1]) then
+                redis.call('decrby', KEYS[1], ARGV[1])
+                return 1
+            end return 0
+        \`;
+        
+        const result = await this.redis.eval(luaScript, 1, \`user:points:\${userId}\`, cost);
+        if (result === 0) throw new Error('积分不足或扣减冲突');
+        
+        await this.asyncSyncToDb(userId, cost);
+        return true;
+    }
+}`;
+    await typeCode(goodCode, true);
+
+    await sleep(1000);
+    setTerminal(prev => [...prev, 
+      { type: 'pm', text: '[PM-Agent] [ZONE 4] Re-executing BDD Tests...' },
+      { type: 'success', text: '[SUCCESS] All 15 tests passed. No race conditions detected.' },
+      { type: 'success', text: "➜ workspace $ git commit -m 'feat: Add robust PointService with Redis lock'" }
+    ]);
+
+    setIdeZone(5);
+    setIdeStatus('success');
+    setPmChat(prev => [...prev, {
+      type: 'html',
+      content: `<p class="font-bold text-green-400 mb-1">ZONE 5: 验收通过，已合并</p>
+                <p class="text-gray-300 text-xs">新的代码已通过高并发压测。PM-Agent 成功避免了由于“执行 Agent 盲目乐观”导致的生产事故。</p>`
+    }]);
+    setDemoState('done');
+  };
+
+  // Multi-Agent Meeting Logic
+  const startMeeting = async () => {
+    setMeetingState('running');
+    setMeetingChat([]);
+    
+    const ROLES = {
+      pm: { name: 'PM-Agent (大总管)', icon: <ShieldCheck className="w-4 h-4 text-white" />, bg: 'bg-blue-600', color: 'text-blue-400', border: 'border-blue-500/30' },
+      arch: { name: 'Architect-Agent (架构师)', icon: <Network className="w-4 h-4 text-white" />, bg: 'bg-purple-600', color: 'text-purple-400', border: 'border-purple-500/30' },
+      dev: { name: 'Dev-Agent / Claude (终端开发)', icon: <Code className="w-4 h-4 text-white" />, bg: 'bg-orange-600', color: 'text-orange-400', border: 'border-orange-500/30' },
+      qa: { name: 'QA-Agent (风控测试)', icon: <TestTube className="w-4 h-4 text-white" />, bg: 'bg-red-600', color: 'text-red-400', border: 'border-red-500/30' }
+    };
+
+    const addMsg = async (roleKey, text) => {
+      setMeetingChat(prev => [...prev, { role: ROLES[roleKey], text }]);
+      await sleep(2500);
+    };
+
+    if (audience === 'beginner') {
+      await addMsg('pm', '欢迎！我是你的 PM-Agent。作为初次接触 Agent 开发的朋友，你可能习惯直接让 AI 写代码。但在我们的规范里，为了防止失控，<strong>我绝不会直接动你的代码</strong>。我会先召集团队开个短会。');
+      await addMsg('arch', '大家好，我是架构 Agent 🏗️。我的工作就像是“画施工图纸”。我会把模糊的需求（比如写个积分接口）转化为严谨的微服务依赖图和 API 契约，告诉后面的开发该怎么写。');
+      await addMsg('dev', '明白了！拿到架构师的精确图纸后，我才会在受限的“沙箱环境”中编写代码。这样我就不会像以前那样，为了修一个报错，擅自把你的底层数据库结构全改掉了 😅。');
+      await addMsg('qa', '而我作为“魔鬼QA”🕵️，会紧紧盯着 Dev。因为大模型写代码往往“盲目乐观”，不考虑断网或并发。我会提前准备好高压测试脚本，一旦代码跑不通边界情况，立刻打回重写！');
+      await addMsg('pm', '没错。这就是我们的 <strong>Agentic Workflow (智能体工作流)</strong>。各司其职，保证最终代码是绝对可靠的。现在，请切换回【代码视图】查看实际执行吧。');
+    } else {
+      await addMsg('pm', '[扫描完毕] 工程：<code>e-commerce-backend</code>。技术栈：Node.js + MySQL。<br>新任务：积分兑换。属核心交易链路。@Architect-Agent 请进行技术面评估与风险阻断。');
+      await addMsg('arch', '评估报告：若单纯使用 MySQL 行级锁做兑换，在秒杀大盘下 TPS 瓶颈极低，且易引发死锁。<br><strong>强制防线注入：</strong> 剥夺 Dev-Agent 的本地数据库修改权限。要求强制引入 Redis `eval` Lua 脚本做原子预扣减。');
+      await addMsg('dev', '收到强类型契约。正在丢弃传统的单纯 UPDATE 方案。准备调取 Redis 模块，构建基于 Lua 的扣减引擎，并增加异步落库 MQ 防丢失补偿机制... 👨‍💻');
+      await addMsg('qa', '拦截预告⚠️：我已向沙箱注入测试桩 (Test Double)，并模拟 10k QPS 并发脉冲。如果 Dev 产出的代码出现哪怕 1 积分的超卖，我将立即触发全局熔断。');
+      await addMsg('pm', '方案 ROI 测算极佳。已自动完成前置 <code>git commit</code> (Checkpoint)。<br>💡 人类开发者，若无异议即可去左侧面板【批准施工】。');
+    }
+    setMeetingState('done');
+  };
+
+  return (
+    <div className="h-[700px] flex flex-col font-sans text-sm rounded-xl overflow-hidden border border-slate-700 shadow-2xl" style={{ backgroundColor: '#1e1e1e', color: '#cccccc' }}>
+      {/* 顶部状态栏 */}
+      <div className="h-8 bg-[#323233] flex items-center justify-between px-3 select-none shrink-0 border-b border-[#1e1e1e]">
+        <div className="flex items-center space-x-4 text-xs text-gray-300">
+          <div className="flex space-x-1.5 mr-2">
+            <div className="w-2.5 h-2.5 rounded-full bg-red-500"></div>
+            <div className="w-2.5 h-2.5 rounded-full bg-yellow-500"></div>
+            <div className="w-2.5 h-2.5 rounded-full bg-green-500"></div>
+          </div>
+          <span className="hover:text-white cursor-pointer">File</span>
+          <span className="hover:text-white cursor-pointer">Edit</span>
+          <span className="hover:text-white cursor-pointer">Terminal</span>
+        </div>
+        <div className="text-xs text-gray-400 font-medium">PointService.js - e-commerce-backend - VS Code</div>
+        <div className="w-16"></div>
+      </div>
+
+      <div className="flex-1 flex overflow-hidden">
+        {/* 左侧活动栏 & 侧边栏 */}
+        <div className="w-12 bg-[#333333] flex flex-col items-center py-3 space-y-5 shrink-0 border-r border-[#3c3c3c] z-10">
+          <Files className="w-6 h-6 text-gray-400" />
+          <Search className="w-6 h-6 text-gray-400" />
+          <GitMerge className="w-6 h-6 text-gray-400" />
+          <div className="relative cursor-pointer">
+            <div className="absolute -left-3 top-0 bottom-0 w-1 bg-[#007acc]"></div>
+            <Shield className="w-6 h-6 text-white" />
+            <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-[#333]"></div>
+          </div>
+        </div>
+
+        <div className="w-80 bg-[#252526] flex flex-col shrink-0 border-r border-[#3c3c3c]">
+          <div className="h-9 flex items-center px-4 text-xs font-bold tracking-widest text-gray-300 uppercase shrink-0">PM-Agent Orchestrator</div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {pmChat.map((msg, i) => (
+              <div key={i} className={`flex items-start ${msg.type === 'user' ? 'justify-end' : ''} animate-in fade-in`}>
+                {msg.type !== 'user' && <div className="w-6 h-6 bg-blue-600 rounded flex items-center justify-center mr-2 shrink-0"><ShieldCheck className="w-4 h-4 text-white" /></div>}
+                <div className={`text-xs p-3 rounded-lg border flex-1 ${msg.type === 'user' ? 'bg-[#2a2d2e] text-gray-200 rounded-tr-none border-[#3c3c3c] max-w-[85%]' : 'bg-[#3c3c3c] text-gray-200 rounded-tl-none border-[#4a4a4a]'}`}>
+                  {msg.type === 'html' ? <div dangerouslySetInnerHTML={{ __html: msg.content }} /> : msg.content}
+                  {i === 0 && demoState === 'idle' && (
+                    <button onClick={startIDEDemo} className="mt-3 w-full bg-[#0e639c] hover:bg-[#1177bb] text-white py-1.5 rounded transition-colors flex items-center justify-center">
+                      <Zap className="w-3 h-3 mr-1" /> 示例：开发积分兑换接口
+                    </button>
+                  )}
+                  {i === 2 && demoState === 'running' && (
+                    <button onClick={approveExecution} className="mt-2 w-full bg-[#007acc] hover:bg-[#005f9e] text-white py-1.5 rounded transition-colors flex items-center justify-center">
+                      <Check className="w-3 h-3 mr-1" /> 批准并施工 (Approve & Execute)
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+            <div ref={pmChatRef} />
+          </div>
+          <div className="p-3 bg-[#252526] border-t border-[#3c3c3c] shrink-0">
+          <div className="bg-[#3c3c3c] flex items-center px-2 py-1.5 rounded border border-[#4a4a4a]">
+            <input type="text" className="bg-transparent w-full outline-none text-xs text-white" placeholder="描述需求，或按 Cmd+K..." readOnly />
+            <Send className="w-4 h-4 text-gray-400 ml-2" />
+          </div>
+        </div>
+      </div>
+
+      {/* 主编辑区 & 终端 */}
+      <div className="flex-1 flex flex-col min-w-0 bg-[#1e1e1e]">
+        <WorkflowTracker currentZone={ideZone} status={ideStatus} />
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Tabs */}
+          <div className="flex bg-[#252526] h-9 shrink-0 select-none">
+              <div onClick={() => setActiveView('code')} className={`flex items-center px-4 text-xs cursor-pointer border-r border-[#3c3c3c] transition-colors ${activeView === 'code' ? 'bg-[#1e1e1e] border-t-2 border-[#007acc] text-white' : 'bg-[#2d2d2d] text-gray-400 border-t-2 border-transparent hover:bg-[#2a2d2e]'}`}>
+                <FileCode2 className="w-4 h-4 text-yellow-400 mr-2" /> PointService.js <X className="w-3 h-3 ml-3 text-gray-500 hover:text-white" />
+              </div>
+              <div onClick={() => setActiveView('meeting')} className={`flex items-center px-4 text-xs cursor-pointer border-r border-[#3c3c3c] transition-colors ${activeView === 'meeting' ? 'bg-[#1e1e1e] border-t-2 border-purple-500 text-white' : 'bg-[#2d2d2d] text-gray-400 border-t-2 border-transparent hover:bg-[#2a2d2e]'}`}>
+                <Users className="w-4 h-4 text-purple-400 mr-2" /> 💬 AI 协同会议室
+              </div>
+            </div>
+
+            {/* View: Code */}
+            {activeView === 'code' && (
+              <div className="flex-1 overflow-auto p-4 font-mono text-sm leading-relaxed relative flex">
+                <div className="w-10 bg-[#1e1e1e] text-right pr-2 text-[#858585] py-4 select-none flex flex-col">
+                  {codeLines.map((_, i) => <span key={i}>{i + 1}</span>)}
+                </div>
+                <div className="pl-4 py-4 w-full">
+                  {codeLines.map((line, i) => <div key={i} dangerouslySetInnerHTML={{ __html: line }} />)}
+                  {(demoState === 'running' || demoState === 'executing') && <span className="animate-pulse font-bold text-white ml-1">|</span>}
+                  <div ref={codeRef} />
+                </div>
+              </div>
+            )}
+
+            {/* View: Meeting Room */}
+            {activeView === 'meeting' && (
+              <div className="flex-1 flex flex-col bg-[#1e1e1e] animate-in fade-in">
+                <div className="h-12 bg-[#252526] border-b border-[#3c3c3c] flex items-center justify-between px-6 shrink-0">
+                  <div className="flex items-center space-x-2 text-sm">
+                    <div className="relative flex w-3 h-3"><div className="absolute w-full h-full bg-red-500 rounded-full opacity-40 animate-ping"></div><div className="relative w-full h-full bg-red-500 rounded-full"></div></div>
+                    <span className="font-bold text-gray-200">Multi-Agent 方案讨论</span>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <select value={audience} onChange={e => setAudience(e.target.value)} className="bg-[#333] text-xs text-white border border-[#4a4a4a] rounded px-2 py-1 outline-none">
+                      <option value="beginner">🌱 初学者科普</option>
+                      <option value="expert">🚀 资深开发者推演</option>
+                    </select>
+                    <button onClick={startMeeting} disabled={meetingState === 'running'} className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs px-3 py-1 rounded flex items-center">
+                      {meetingState === 'running' ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Play className="w-3 h-3 mr-1 fill-current" />}
+                      {meetingState === 'idle' ? '开启会议' : '重新推演'}
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-[#1e1e1e]/50">
+                  {meetingChat.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-gray-500"><Users className="w-12 h-12 mb-3 opacity-20" /><p>请选择受众并开启会议</p></div>
+                  ) : (
+                    meetingChat.map((msg, i) => (
+                      <div key={i} className="flex items-start animate-in fade-in slide-in-from-bottom-2">
+                        <div className={`w-8 h-8 ${msg.role.bg} rounded-lg flex items-center justify-center mr-3 shrink-0 shadow-lg`}>{msg.role.icon}</div>
+                        <div className={`bg-[#2a2d2e] p-3.5 rounded-xl rounded-tl-none border ${msg.role.border} flex-1 shadow-sm`}>
+                          <div className={`font-bold text-xs ${msg.role.color} mb-1`}>{msg.role.name}</div>
+                          <div className="text-sm text-gray-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: msg.text }} />
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  <div ref={meetingEndRef} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Terminal */}
+          <div className="h-56 bg-[#1e1e1e] border-t border-[#3c3c3c] flex flex-col shrink-0 relative">
+            <div className="h-9 flex items-center px-4 border-b border-[#3c3c3c] bg-[#1e1e1e] text-xs tracking-wide shrink-0">
+              <span className="text-gray-400 mr-4">PROBLEMS</span>
+              <span className="text-white border-b border-white pb-[11px] mt-[11px] mr-4">TERMINAL</span>
+              <span className="text-gray-400">OUTPUT</span>
+            </div>
+            <div className="flex-1 p-3 font-mono text-[11px] overflow-y-auto">
+              {terminal.map((log, i) => {
+                let color = 'text-gray-300';
+                if(log.type === 'error') color = 'text-red-400';
+                if(log.type === 'success') color = 'text-green-400';
+                if(log.type === 'pm') color = 'text-blue-400';
+                if(log.type === 'claude') color = 'text-[#d48265]';
+                return <div key={i} className={`${color} mt-1`} dangerouslySetInnerHTML={{__html: log.text}} />
+              })}
+              <div ref={termRef} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ==========================================
+// 主应用框架 (Dashboard)
+// ==========================================
+export default function App() {
+  const [activeTab, setActiveTab] = useState('vision');
+
+  const navs = [
+    { id: 'vision', label: '核心愿景', icon: <LayoutDashboard className="w-4 h-4 mr-2" /> },
+    { id: 'painpoints', label: '痛点与解法', icon: <ShieldAlert className="w-4 h-4 mr-2" /> },
+    { id: 'architecture', label: '架构蓝图', icon: <Component className="w-4 h-4 mr-2" /> },
+    { id: 'competitors', label: '竞品分析', icon: <GitCompare className="w-4 h-4 mr-2" /> },
+    { id: 'demo-planning', label: '🎯 体验：需求规划原型', icon: <BrainCircuit className="w-4 h-4 mr-1.5" />, highlight: true },
+    { id: 'demo-ide', label: '💻 体验：IDE 开发演示', icon: <Code className="w-4 h-4 mr-1.5" />, highlight: true },
+  ];
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-800">
+      {/* 顶部标题栏 */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center">
+              <div className="bg-indigo-600 p-2 rounded-lg mr-3 shadow-md shadow-indigo-600/20"><BrainCircuit className="w-6 h-6 text-white" /></div>
+              <div>
+                <h1 className="text-xl font-bold text-slate-900 leading-tight tracking-tight">PM-Agent 方案展示与全真体验版</h1>
+                <p className="text-xs text-slate-500 font-medium">给失控的执行 Agent 装上架构级的刹车与导航</p>
+              </div>
+            </div>
+            <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">v1.0 Proposal</span>
+          </div>
+        </div>
+      </header>
+
+      {/* 导航标签 */}
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+        <div className="flex flex-wrap gap-2 bg-white p-1.5 rounded-xl border border-slate-200 shadow-sm w-fit">
+          {navs.map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                activeTab === tab.id 
+                  ? (tab.highlight ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-800 text-white shadow-md')
+                  : (tab.highlight ? 'text-indigo-600 hover:bg-indigo-50' : 'text-slate-600 hover:bg-slate-100')
+              }`}>
+              {tab.icon} {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 主内容区 */}
+      <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        {/* Tab 1: Vision */}
+        {activeTab === 'vision' && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="bg-white rounded-2xl p-8 shadow-sm border border-slate-200">
+              <h2 className="text-3xl font-bold text-slate-900 mb-4">研发模式正在剧变，我们需要新的引擎。</h2>
+              <p className="text-lg text-slate-600 mb-6 leading-relaxed">大模型正从“Copilot”走向“Agent”。传统的 PRD 已经失效，因为大模型看不懂人类文档背后“隐晦的业务折中”和“全局的架构依赖”。</p>
+              <div className="bg-rose-50 border-l-4 border-rose-500 p-4 mb-6 rounded-r-lg">
+                <p className="text-rose-800 font-medium">当前现状：开发者变成了大模型的“保姆”。执行 Agent 犹如勤奋却缺乏大局观的“超级外包”，速度极快但也极易脱轨，造成灾难性的代码覆盖。</p>
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 mt-8 mb-4 flex items-center"><Target className="w-5 h-5 mr-2 text-indigo-600" /> PM-Agent 的核心定位</h3>
+              <p className="text-slate-600 leading-relaxed">
+                本项目的诞生，正是为了给失控的执行 Agent 装上 <strong className="text-indigo-600">“架构级的刹车”</strong>和<strong className="text-indigo-600">“业务级的导航”</strong>。
+                PM Agent 通过接管工作流中的 <strong>规划（Planning）</strong> 与 <strong>风控（QA/Reflection）</strong> 节点，将传统文档重构为强类型的接口契约、依赖拓扑和 BDD 测试用例。
+              </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center mb-4"><FileText className="w-6 h-6" /></div><h4 className="text-lg font-bold mb-2">重构需求输入</h4><p className="text-slate-600 text-sm">将模糊的人类想法自动翻译为机器可读的结构化契约、DAG 拓扑图，建立开发准则。</p></div>
+              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-lg flex items-center justify-center mb-4"><ShieldCheck className="w-6 h-6" /></div><h4 className="text-lg font-bold mb-2">架构级把控</h4><p className="text-slate-600 text-sm">强制进行系统级变更影响面分析，杜绝“改一处崩全局”，实施边界隔离。</p></div>
+              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center mb-4"><Target className="w-6 h-6" /></div><h4 className="text-lg font-bold mb-2">自动化风控</h4><p className="text-slate-600 text-sm">作为“魔鬼QA”注入异常测试，进行 BDD 业务断言，未达标直接触发熔断回滚。</p></div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 2: Pain Points */}
+        {activeTab === 'painpoints' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <h2 className="text-2xl font-bold text-slate-900 mb-6">核心痛点与 PM-Agent 解法</h2>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {painPoints.map((item, index) => (
+                <div key={index} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col p-6">
+                  <div className="flex items-center mb-4">{item.icon}<h3 className="text-lg font-bold text-slate-900 ml-3">{item.title}</h3></div>
+                  <div className="mb-4 bg-slate-50 p-3 rounded-lg border border-slate-100"><p className="text-sm font-medium text-slate-700 mb-1">开发者惨痛现状：</p><p className="text-sm text-slate-600 italic">"{item.issue}"</p></div>
+                  <div><p className="text-sm font-bold text-indigo-600 mb-1">PM-Agent 破局方案：</p><p className="text-base font-semibold text-slate-800 mb-1">{item.solution}</p><p className="text-sm text-slate-600">{item.desc}</p></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: Architecture */}
+        {activeTab === 'architecture' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+             <div className="mb-6"><h2 className="text-2xl font-bold text-slate-900">系统架构蓝图 (核心工作流)</h2></div>
+            <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm overflow-auto max-h-[800px] flex justify-center">
+              <Mermaid chart={fullArchitectureDiagram} />
+            </div>
+          </div>
+        )}
+
+        {/* Tab 4: Competitors */}
+        {activeTab === 'competitors' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+             <h2 className="text-2xl font-bold text-slate-900 mb-6">核心竞品分析</h2>
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <table className="min-w-full divide-y divide-slate-200">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase">对比维度</th>
+                      <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase border-l border-slate-200">IDE 插件类 (Cursor)</th>
+                      <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase border-l border-slate-200">单体 Agent (Devin/Aider)</th>
+                      <th className="px-6 py-4 text-left text-sm font-bold text-indigo-600 uppercase border-l-2 border-indigo-500 bg-indigo-50/50">本品: PM-Agent</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-slate-200">
+                    <tr><td className="px-6 py-4 text-sm font-medium">产品定位</td><td className="px-6 py-4 text-sm border-l border-slate-200">高级代码补全器</td><td className="px-6 py-4 text-sm border-l border-slate-200">超级外包程序员</td><td className="px-6 py-4 text-sm font-bold text-indigo-700 border-l-2 border-indigo-500 bg-indigo-50/30">AI 研发大总管</td></tr>
+                    <tr><td className="px-6 py-4 text-sm font-medium">异常处理</td><td className="px-6 py-4 text-sm border-l border-slate-200">被动提示错误</td><td className="px-6 py-4 text-sm border-l border-slate-200">死磕报错，易陷入死循环</td><td className="px-6 py-4 text-sm text-indigo-900 border-l-2 border-indigo-500 bg-indigo-50/30">主动测算 ROI，降级与熔断</td></tr>
+                  </tbody>
+                </table>
+            </div>
+            <div className="mt-6 flex items-start space-x-4 bg-amber-50 p-5 rounded-xl border border-amber-200">
+              <Globe className="w-6 h-6 text-amber-600 shrink-0" />
+              <div>
+                <h4 className="text-md font-bold text-amber-900">市面上现有的 "PM Agent" 盲区</h4>
+                <p className="text-amber-800 text-sm mt-1">目前市面上的 PM Agent (如 Mergeek) 基本只停留在“录音转文字”、“写 Markdown PRD”，是办公工具。我们的 PM-Agent 是面向工程的编排中间件。</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 5: Planning Demo */}
+        {activeTab === 'demo-planning' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="mb-4">
+              <h2 className="text-2xl font-bold text-slate-900">交互原型：需求规划与审批门</h2>
+              <p className="text-slate-500 text-sm mt-1">演示 PM-Agent 如何主动追问边界，并将模糊需求转化为可视化的架构拓扑与 BDD 契约。</p>
+            </div>
+            <PlanningPrototype />
+          </div>
+        )}
+
+        {/* Tab 6: IDE Demo */}
+        {activeTab === 'demo-ide' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="mb-4">
+              <h2 className="text-2xl font-bold text-slate-900">场景演示：IDE 插件与全息会议室</h2>
+              <p className="text-slate-500 text-sm mt-1">演示 PM-Agent 如何调度 Claude Code 进行沙箱开发，并通过【协同会议室】展示多智能体分工推演。</p>
+            </div>
+            <IDEDemo />
+          </div>
+        )}
+
+      </main>
+    </div>
+  );
+}
