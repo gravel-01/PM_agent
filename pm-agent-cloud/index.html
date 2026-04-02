@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PM-Agent Cloud Brain</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              ink: '#0b1220',
+              brass: '#d8b16f',
+              mist: '#d7e5f2',
+              signal: '#7dd3fc',
+              ember: '#f59e0b',
+            },
+            boxShadow: {
+              glow: '0 0 0 1px rgba(125, 211, 252, 0.18), 0 24px 80px rgba(11, 18, 32, 0.45)',
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+
+      body {
+        font-family: 'Space Grotesk', sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(125, 211, 252, 0.18), transparent 28%),
+          radial-gradient(circle at top right, rgba(245, 158, 11, 0.16), transparent 24%),
+          linear-gradient(135deg, #08111f 0%, #0d1728 45%, #0f1d31 100%);
+        min-height: 100vh;
+      }
+
+      code,
+      pre,
+      textarea {
+        font-family: 'IBM Plex Mono', monospace;
+      }
+
+      .grid-fog {
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        background-size: 28px 28px;
+      }
+
+      .halo::before {
+        content: '';
+        position: absolute;
+        inset: -1px;
+        border-radius: inherit;
+        padding: 1px;
+        background: linear-gradient(135deg, rgba(125, 211, 252, 0.35), rgba(216, 177, 111, 0.28));
+        -webkit-mask:
+          linear-gradient(#fff 0 0) content-box,
+          linear-gradient(#fff 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+        pointer-events: none;
+      }
+
+      .scanline {
+        animation: drift 14s linear infinite;
+      }
+
+      @keyframes drift {
+        0% {
+          transform: translateY(-20%);
+        }
+
+        100% {
+          transform: translateY(120%);
+        }
+      }
+
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(14px);
+        }
+
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .rise-in {
+        animation: rise 0.55s ease-out both;
+      }
+    </style>
+  </head>
+  <body class="text-slate-100">
+    <div id="root"></div>
+
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+      const { useEffect, useMemo, useState } = React;
+
+      function normalizeContext(raw) {
+        const packageJson = raw && typeof raw.packageJson === 'object' ? raw.packageJson : {};
+        const dependencies = raw?.dependencies || packageJson.dependencies || {};
+        const devDependencies = raw?.devDependencies || packageJson.devDependencies || {};
+        const dbSchema = raw?.dbSchema || raw?.schemaFiles || [];
+        const fileTree = typeof raw?.fileTree === 'string' ? raw.fileTree : 'No file tree available.';
+
+        return {
+          raw: raw || {},
+          projectRoot: raw?.projectRoot || raw?.project || 'Unknown Project',
+          fileTree,
+          dependencies,
+          devDependencies,
+          dbSchema,
+        };
+      }
+
+      function buildPrompt(context, demand) {
+        const contractPayload = {
+          projectRoot: context.projectRoot,
+          fileTree: context.fileTree,
+          dependencies: context.dependencies,
+          devDependencies: context.devDependencies,
+          dbSchema: context.dbSchema,
+        };
+
+        return [
+          '你现在拥有该项目的全局骨架上下文，请基于以下信息理解系统后再执行需求。',
+          '',
+          '【全局骨架上下文】',
+          JSON.stringify(contractPayload, null, 2),
+          '',
+          '【用户需求】',
+          demand.trim(),
+          '',
+          '【执行要求】',
+          '1. 优先基于已提供的项目骨架、技术栈与数据结构做判断。',
+          '2. 不要脱离上下文臆测不存在的模块。',
+          '3. 给出可直接在本地 IDE AI 中执行的实现方案、关键改动点与必要代码。',
+        ].join('\n');
+      }
+
+      function MetricTile({ label, value }) {
+        return (
+          <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-4 shadow-glow">
+            <div className="text-xs uppercase tracking-[0.3em] text-slate-400">{label}</div>
+            <div className="mt-2 text-3xl font-semibold text-white">{value}</div>
+          </div>
+        );
+      }
+
+      function Panel({ title, eyebrow, children, className = '' }) {
+        return (
+          <section className={`relative overflow-hidden rounded-[28px] border border-white/10 bg-slate-950/55 p-5 shadow-glow backdrop-blur ${className}`}>
+            <div className="halo absolute inset-0 rounded-[28px]"></div>
+            <div className="relative z-10">
+              <div className="text-[11px] uppercase tracking-[0.35em] text-brass">{eyebrow}</div>
+              <h2 className="mt-2 text-xl font-semibold text-white">{title}</h2>
+              <div className="mt-5">{children}</div>
+            </div>
+          </section>
+        );
+      }
+
+      function TreeCard({ fileTree }) {
+        const lines = fileTree.split('\n').filter(Boolean);
+
+        return (
+          <Panel title="Project Topology" eyebrow="God View" className="min-h-[320px]">
+            <div className="relative overflow-hidden rounded-2xl border border-signal/20 bg-ink/90">
+              <div className="grid-fog absolute inset-0 opacity-60"></div>
+              <div className="scanline absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-signal/0 via-signal/10 to-signal/0"></div>
+              <div className="relative z-10 max-h-[420px] overflow-auto p-4">
+                <pre className="space-y-1 text-sm text-mist">
+                  {lines.map((line, index) => (
+                    <div key={`${line}-${index}`} className="rise-in whitespace-pre-wrap break-all" style={{ animationDelay: `${index * 35}ms` }}>
+                      {line}
+                    </div>
+                  ))}
+                </pre>
+              </div>
+            </div>
+          </Panel>
+        );
+      }
+
+      function DependencyCard({ title, items, tone }) {
+        const entries = Object.entries(items || {});
+
+        return (
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-200">{title}</h3>
+              <span className={`rounded-full border px-3 py-1 text-xs ${tone}`}>{entries.length} items</span>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {entries.length ? (
+                entries.map(([name, version]) => (
+                  <span key={name} className="rounded-full border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-slate-100">
+                    {name}
+                    <span className="ml-2 text-slate-400">{version}</span>
+                  </span>
+                ))
+              ) : (
+                <div className="text-sm text-slate-400">暂无依赖数据。</div>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      function SchemaCard({ dbSchema }) {
+        const items = Array.isArray(dbSchema) ? dbSchema : dbSchema ? [dbSchema] : [];
+
+        return (
+          <Panel title="Schema Signals" eyebrow="Data Layer">
+            <div className="space-y-4">
+              {items.length ? (
+                items.map((item, index) => {
+                  const pathLabel = typeof item === 'string' ? `schema-${index + 1}` : item.path || `schema-${index + 1}`;
+                  const preview = typeof item === 'string' ? item : item.preview || item.content || item.error || 'No preview available.';
+
+                  return (
+                    <div key={`${pathLabel}-${index}`} className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
+                      <div className="text-sm font-semibold text-brass">{pathLabel}</div>
+                      <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap break-words text-sm text-slate-300">
+                        {preview}
+                      </pre>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.03] p-6 text-sm text-slate-400">
+                  当前上下文里还没有数据库结构信息。
+                </div>
+              )}
+            </div>
+          </Panel>
+        );
+      }
+
+      function App() {
+        const [context, setContext] = useState(null);
+        const [loading, setLoading] = useState(true);
+        const [error, setError] = useState('');
+        const [demand, setDemand] = useState('');
+        const [generatedPrompt, setGeneratedPrompt] = useState('');
+        const [copyState, setCopyState] = useState('idle');
+
+        useEffect(() => {
+          async function fetchContext() {
+            setLoading(true);
+            setError('');
+
+            try {
+              const response = await fetch('/api/get-context');
+              const text = await response.text();
+              const parsed = text ? JSON.parse(text) : {};
+
+              if (!response.ok) {
+                throw new Error(parsed.message || 'Failed to fetch context.');
+              }
+
+              setContext(normalizeContext(parsed));
+            } catch (fetchError) {
+              setError(fetchError.message || 'Failed to fetch context.');
+            } finally {
+              setLoading(false);
+            }
+          }
+
+          fetchContext();
+        }, []);
+
+        const stats = useMemo(() => {
+          if (!context) {
+            return {
+              treeNodes: 0,
+              dependencyCount: 0,
+              schemaCount: 0,
+            };
+          }
+
+          const treeNodes = context.fileTree.split('\n').filter(Boolean).length;
+          const dependencyCount =
+            Object.keys(context.dependencies || {}).length + Object.keys(context.devDependencies || {}).length;
+          const schemaCount = Array.isArray(context.dbSchema) ? context.dbSchema.length : context.dbSchema ? 1 : 0;
+
+          return {
+            treeNodes,
+            dependencyCount,
+            schemaCount,
+          };
+        }, [context]);
+
+        async function handleCopy() {
+          if (!generatedPrompt) {
+            return;
+          }
+
+          try {
+            await navigator.clipboard.writeText(generatedPrompt);
+            setCopyState('copied');
+            window.setTimeout(() => setCopyState('idle'), 2200);
+          } catch (copyError) {
+            setCopyState('failed');
+            window.setTimeout(() => setCopyState('idle'), 2200);
+          }
+        }
+
+        function handleGenerate() {
+          if (!context) {
+            setError('全局上下文尚未加载完成。');
+            return;
+          }
+
+          if (!demand.trim()) {
+            setError('请先输入一句话需求。');
+            return;
+          }
+
+          setError('');
+          setGeneratedPrompt(buildPrompt(context, demand));
+        }
+
+        return (
+          <main className="min-h-screen px-4 py-6 sm:px-6 lg:px-8">
+            <div className="mx-auto max-w-7xl">
+              <header className="relative overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.04] px-6 py-8 shadow-glow backdrop-blur">
+                <div className="halo absolute inset-0 rounded-[32px]"></div>
+                <div className="relative z-10 flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+                  <div className="max-w-3xl">
+                    <div className="text-xs uppercase tracking-[0.45em] text-signal">PM-Agent Cloud Brain</div>
+                    <h1 className="mt-4 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
+                      上帝视角总控台
+                    </h1>
+                    <p className="mt-4 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg">
+                      实时吸收项目骨架上下文，拼接需求契约，让本地 IDE AI 从一开始就站在全局视角工作。
+                    </p>
+                  </div>
+                  <div className="grid w-full max-w-xl grid-cols-1 gap-4 sm:grid-cols-3">
+                    <MetricTile label="Tree Nodes" value={stats.treeNodes} />
+                    <MetricTile label="Packages" value={stats.dependencyCount} />
+                    <MetricTile label="Schemas" value={stats.schemaCount} />
+                  </div>
+                </div>
+              </header>
+
+              <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+                <section className="space-y-6">
+                  {loading ? (
+                    <Panel title="Synchronizing Context" eyebrow="Loading">
+                      <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-6 text-slate-300">
+                        正在连接云端大脑并拉取全局骨架上下文...
+                      </div>
+                    </Panel>
+                  ) : error && !context ? (
+                    <Panel title="Context Error" eyebrow="Signal Lost">
+                      <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 p-6 text-rose-100">
+                        {error}
+                      </div>
+                    </Panel>
+                  ) : (
+                    <>
+                      <TreeCard fileTree={context?.fileTree || 'No file tree available.'} />
+                      <Panel title="Tech Stack Radar" eyebrow="Dependencies">
+                        <div className="space-y-4">
+                          <DependencyCard
+                            title="Runtime Dependencies"
+                            items={context?.dependencies}
+                            tone="border-signal/30 bg-signal/10 text-signal"
+                          />
+                          <DependencyCard
+                            title="Dev Dependencies"
+                            items={context?.devDependencies}
+                            tone="border-amber-400/30 bg-amber-400/10 text-amber-200"
+                          />
+                        </div>
+                      </Panel>
+                      <SchemaCard dbSchema={context?.dbSchema} />
+                    </>
+                  )}
+                </section>
+
+                <section className="space-y-6">
+                  <Panel title="Mission Dispatch" eyebrow="Requirement Input">
+                    <div className="space-y-4">
+                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm leading-6 text-slate-300">
+                        当前上下文会自动融合进终极契约，包含目录树、技术栈和数据库结构信号。
+                      </div>
+                      <textarea
+                        value={demand}
+                        onChange={(event) => setDemand(event.target.value)}
+                        placeholder="例如：为订单模块新增一个可审计的状态流转接口，并补齐对应的数据表设计。"
+                        className="min-h-[180px] w-full rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-4 text-sm text-white outline-none transition focus:border-signal/60 focus:ring-2 focus:ring-signal/30"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleGenerate}
+                        className="w-full rounded-2xl bg-gradient-to-r from-signal to-brass px-5 py-4 text-sm font-semibold text-ink transition hover:opacity-95"
+                      >
+                        生成契约
+                      </button>
+                      {error && context ? (
+                        <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                          {error}
+                        </div>
+                      ) : null}
+                    </div>
+                  </Panel>
+
+                  <Panel title="Terminal Contract" eyebrow="Prompt Output">
+                    <div className="space-y-4">
+                      <div className="rounded-2xl border border-brass/30 bg-brass/10 px-4 py-3 text-sm leading-6 text-amber-50">
+                        已融合全局视野，请将此契约复制到您的本地 IDE AI 对话框中执行。
+                      </div>
+                      <div className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/90">
+                        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+                          <div className="text-sm font-semibold text-white">Ultimate Prompt</div>
+                          <button
+                            type="button"
+                            onClick={handleCopy}
+                            disabled={!generatedPrompt}
+                            className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-200 transition hover:border-signal/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '一键复制'}
+                          </button>
+                        </div>
+                        <pre className="max-h-[520px] overflow-auto whitespace-pre-wrap break-words p-4 text-sm leading-6 text-slate-200">
+                          {generatedPrompt || '点击“生成契约”后，终极 Prompt 会显示在这里。'}
+                        </pre>
+                      </div>
+                    </div>
+                  </Panel>
+                </section>
+              </div>
+            </div>
+          </main>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+  </body>
+</html>

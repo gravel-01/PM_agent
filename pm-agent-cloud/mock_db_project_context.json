@@ -1,0 +1,12 @@
+{
+  "projectRoot": "D:\\my_data\\code\\Virtual Farm",
+  "collectedAt": "2026-04-02T19:29:30.937Z",
+  "fileTree": "Virtual Farm\n├── character setting\n│   ├── design-ui-designer.md\n│   ├── engineering-code-reviewer.md\n│   ├── engineering-frontend-developer.md\n│   ├── game-designer.md\n│   └── product-manager.md\n├── doc\n│   ├── archive\n│   ├── blog\n│   │   └── multi-agent-dev-needs.md\n│   ├── chat\n│   │   ├── init.json\n│   │   ├── phase-01-core-frame.json\n│   │   ├── phase-02-visual-frame.json\n│   │   ├── phase-03-build-plan.json\n│   │   ├── phase-04-implementation-sync.json\n│   │   └── phase-05-qa-archive.json\n│   ├── core\n│   │   ├── code-reviewer-v1.md\n│   │   ├── game-designer-v1.md\n│   │   ├── game-state-contract-v1.md\n│   │   ├── gameplay-constants-v1.md\n│   │   ├── project-basics.md\n│   │   └── ui-designer-v1.md\n│   └── lab\n│       ├── analysis-report.md\n│       ├── experiment-data.js\n│       ├── experiment-data.json\n│       ├── index.html\n│       ├── lab.css\n│       ├── lab.js\n│       ├── report_reinforce.html\n│       ├── report.css\n│       ├── report.html\n│       └── report.js\n├── vercel-report\n│   ├── character setting\n│   │   ├── design-ui-designer.md\n│   │   ├── engineering-code-reviewer.md\n│   │   ├── engineering-frontend-developer.md\n│   │   ├── game-designer.md\n│   │   └── product-manager.md\n│   ├── doc\n│   │   ├── chat\n│   │   │   ├── init.json\n│   │   │   ├── phase-01-core-frame.json\n│   │   │   ├── phase-02-visual-frame.json\n│   │   │   ├── phase-03-build-plan.json\n│   │   │   ├── phase-04-implementation-sync.json\n│   │   │   └── phase-05-qa-archive.json\n│   │   └── core\n│   │       ├── code-reviewer-v1.md\n│   │       ├── game-designer-v1.md\n│   │       ├── game-state-contract-v1.md\n│   │       ├── gameplay-constants-v1.md\n│   │       ├── project-basics.md\n│   │       └── ui-designer-v1.md\n│   ├── sessions\n│   │   └── 2026\n│   │       └── 04\n│   ├── workspace\n│   │   ├── game.js\n│   │   ├── index.html\n│   │   └── style.css\n│   ├── analysis-report.md\n│   ├── experiment-data.js\n│   ├── experiment-data.json\n│   ├── game.js\n│   ├── index.html\n│   ├── lab.css\n│   ├── lab.js\n│   ├── report.css\n│   ├── report.html\n│   ├── report.js\n│   ├── style.css\n│   └── vercel.json\n├── game.js\n├── index.html\n└── style.css",
+  "packageJson": {
+    "found": false,
+    "path": "D:\\my_data\\code\\Virtual Farm\\package.json",
+    "dependencies": {},
+    "devDependencies": {}
+  },
+  "schemaFiles": []
+}
